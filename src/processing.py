@@ -1,3 +1,4 @@
+
 import pandas as pd
 
 
@@ -13,23 +14,57 @@ def create_dataframe(studies):
         design = protocol["designModule"]
         arms = protocol.get("armsInterventionsModule", {})
 
+        # Study identification
         nct_id = identification["nctId"]
+        trial_url = f"https://clinicaltrials.gov/study/{nct_id}"
         title = identification["briefTitle"]
+
+        # Recruitment status and sponsor
         overall_status = status["overallStatus"]
         sponsor = sponsor_module["leadSponsor"]["name"]
 
-        phases = design.get("phases", ["Not Applicable"])
-        phase = ", ".join(phases)
+        # Trial phase normalisation
+        phases = design.get("phases") or []
 
+        phase_labels = {
+            "EARLY_PHASE1": "Early Phase 1",
+            "PHASE1": "Phase 1",
+            "PHASE2": "Phase 2",
+            "PHASE3": "Phase 3",
+            "PHASE4": "Phase 4",
+            "NA": "Not Applicable"
+        }
+
+        cleaned_phases = [
+            phase_labels.get(p, p)
+            for p in phases
+        ]
+
+        phase = (
+            ", ".join(cleaned_phases)
+            if cleaned_phases
+            else "Not Applicable"
+        )
+
+        # Study design and enrollment
         enrollment_info = design.get("enrollmentInfo", {})
         enrollment = enrollment_info.get("count")
+        study_type = design.get(
+            "studyType",
+            "Not available"
+        )
 
-        study_type = design.get("studyType", "Not available")
-
+        # Start date
         start_date_info = status.get("startDateStruct", {})
-        start_date = start_date_info.get("date", "Not available")
+        start_date = start_date_info.get(
+            "date",
+            "Not available"
+        )
 
-        contacts_locations = protocol.get("contactsLocationsModule", {})
+        # Study locations
+        contacts_locations = protocol.get(
+            "contactsLocationsModule", {}
+        )
         locations = contacts_locations.get("locations", [])
 
         countries = sorted({
@@ -44,6 +79,7 @@ def create_dataframe(studies):
             else "Not available"
         )
 
+        # Interventions
         interventions = arms.get("interventions", [])
 
         intervention_types = [
@@ -68,8 +104,10 @@ def create_dataframe(studies):
             else "Not available"
         )
 
+        # Build one structured record per study
         trial_record = {
             "NCT ID": nct_id,
+            "Trial Link": trial_url,
             "Title": title,
             "Study Type": study_type,
             "Phase": phase,

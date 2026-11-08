@@ -1,6 +1,5 @@
 import requests
 
-
 BASE_URL = "https://clinicaltrials.gov/api/v2/studies"
 
 
@@ -11,40 +10,50 @@ def fetch_studies(condition, page_size=100, max_pages=3):
     }
 
     all_studies = []
-    page_count = 0
     next_page_token = None
 
-    while page_count < max_pages:
+    for page_number in range(1, max_pages + 1):
 
         if next_page_token:
             params["pageToken"] = next_page_token
 
-        response = requests.get(BASE_URL, params=params)
-
-        if response.status_code != 200:
-            print(
-                f"Request failed with status code: "
-                f"{response.status_code}"
+        try:
+            response = requests.get(
+                BASE_URL,
+                params=params,
+                timeout=30
             )
-            break
 
-        data = response.json()
+            response.raise_for_status()
+            data = response.json()
 
-        studies = data["studies"]
+        except requests.exceptions.Timeout:
+            raise RuntimeError(
+                "ClinicalTrials.gov took too long to respond. "
+                "Please try again."
+            )
 
+        except requests.exceptions.RequestException as error:
+            raise RuntimeError(
+                "Unable to retrieve data from ClinicalTrials.gov."
+            ) from error
+
+        except ValueError as error:
+            raise RuntimeError(
+                "ClinicalTrials.gov returned an invalid response."
+            ) from error
+
+        studies = data.get("studies", [])
         all_studies.extend(studies)
 
-        page_count += 1
-
         print(
-            f"Page {page_count} retrieved — "
+            f"Page {page_number} retrieved — "
             f"{len(studies)} studies found."
         )
 
         next_page_token = data.get("nextPageToken")
 
         if not next_page_token:
-            print("No more pages available.")
             break
 
     return all_studies
