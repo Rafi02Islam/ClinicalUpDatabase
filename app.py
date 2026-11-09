@@ -1,58 +1,192 @@
-import streamlit as st
+import pandas as pd
 import plotly.express as px
+import streamlit as st
 
 from src.api import fetch_studies
 from src.processing import create_dataframe
+from src.geography import (
+    expand_trial_countries,
+    get_country_counts,
+    get_geographic_metrics,
+)
 
 # --------------------------------------------------
 # PAGE CONFIGURATION
 # --------------------------------------------------
 
-st.set_page_config(page_title="ClinicalUpDatabase", page_icon="🧬", layout="wide")
+st.set_page_config(
+    page_title="ClinicalUpDatabase",
+    page_icon="🧬",
+    layout="wide",
+)
 
-st.title("🧬 ClinicalUpDatabase")
-st.subheader("Clinical Trial Intelligence Dashboard")
+BLUE = "#2563EB"
+NAVY = "#0F2747"
+TEAL = "#0D9488"
 
-st.write(
-    "Explore clinical trials, development phases, "
-    "recruitment activity and sponsor landscapes "
-    "using ClinicalTrials.gov data."
+COLOR_SEQUENCE = [
+    BLUE,
+    TEAL,
+    "#60A5FA",
+    "#7C3AED",
+    "#F59E0B",
+    "#64748B",
+]
+
+PHASE_MAPPING = {
+    "EARLY_PHASE1": "Early Phase 1",
+    "PHASE1": "Phase 1",
+    "PHASE2": "Phase 2",
+    "PHASE3": "Phase 3",
+    "PHASE4": "Phase 4",
+    "NA": "Not Applicable",
+}
+
+PHASE_OPTIONS = [
+    "Early Phase 1",
+    "Phase 1",
+    "Phase 2",
+    "Phase 3",
+    "Phase 4",
+    "Not Applicable",
+]
+
+
+# --------------------------------------------------
+# VISUAL STYLING
+# --------------------------------------------------
+
+st.markdown(
+    """
+    <style>
+    .block-container {
+        max-width: 1450px;
+        padding-top: 2rem;
+        padding-bottom: 3rem;
+    }
+
+    h1, h2, h3 {
+        color: #0F2747;
+    }
+
+    div[data-testid="stMetric"] {
+        background-color: #F3F7FC;
+        border: 1px solid #DFE8F4;
+        border-radius: 12px;
+        padding: 16px 20px;
+    }
+
+    div[data-testid="stMetricValue"] {
+        color: #2563EB;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
 )
 
 
 # --------------------------------------------------
-# DATA RETRIEVAL
+# HELPER FUNCTIONS
 # --------------------------------------------------
 
 
 @st.cache_data(ttl=3600)
 def load_data(condition, max_pages):
-    studies = fetch_studies(condition=condition, page_size=100, max_pages=max_pages)
+    studies = fetch_studies(
+        condition=condition,
+        page_size=100,
+        max_pages=max_pages,
+    )
 
     return create_dataframe(studies)
 
 
-if "trial_data" not in st.session_state:
-    st.session_state.trial_data = None
+def clean_phase(value):
+    phases = str(value).split(",")
+
+    return [
+        PHASE_MAPPING.get(
+            phase.strip(),
+            phase.strip(),
+        )
+        for phase in phases
+    ]
+
+
+def style_chart(fig, height=350):
+    fig.update_layout(
+        template="plotly_white",
+        height=height,
+        margin=dict(l=15, r=15, t=45, b=25),
+        font=dict(color=NAVY),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+    )
+
+    return fig
+
+
+# --------------------------------------------------
+# HEADER
+# --------------------------------------------------
+
+st.title("🧬 ClinicalUpDatabase")
+
+st.markdown("**Clinical Trial Intelligence Platform**")
+
+st.caption(
+    "Explore clinical development activity, recruitment trends, "
+    "sponsor landscapes and geographic trial distribution "
+    "using publicly available ClinicalTrials.gov data."
+)
+
+st.divider()
 
 
 # --------------------------------------------------
 # SEARCH
 # --------------------------------------------------
 
-condition = st.text_input("Search therapeutic area", value="breast cancer")
+st.subheader("Explore Clinical Trials")
 
-max_pages = st.slider("Number of pages to retrieve", min_value=1, max_value=10, value=3)
+search_col, pages_col = st.columns([3, 1])
 
-if st.button("Search Clinical Trials"):
+with search_col:
+    condition = st.text_input(
+        "Therapeutic area or medical condition",
+        value="breast cancer",
+    )
 
+with pages_col:
+    max_pages = st.selectbox(
+        "Number of studies to retrieve",
+        options=[100, 200, 300, 500, 1000],
+        index=2,
+    )
+
+if "trial_data" not in st.session_state:
+    st.session_state.trial_data = None
+
+if "searched_condition" not in st.session_state:
+    st.session_state.searched_condition = None
+
+if st.button(
+    "🔎 Search Clinical Trials",
+    type="primary",
+):
     if not condition.strip():
         st.warning("Please enter a therapeutic area.")
 
     else:
         try:
             with st.spinner("Retrieving clinical trial data..."):
-                st.session_state.trial_data = load_data(condition.strip(), max_pages)
+                df_result = load_data(
+                    condition.strip(),
+                    max_pages // 100,
+                )
+
+                st.session_state.trial_data = df_result
+                st.session_state.searched_condition = condition.strip()
 
         except RuntimeError as error:
             st.session_state.trial_data = None
@@ -63,223 +197,419 @@ if st.button("Search Clinical Trials"):
 # DASHBOARD
 # --------------------------------------------------
 
-if st.session_state.trial_data is not None:
+if st.session_state.trial_data is None:
+    st.info("Enter a therapeutic area and select " "'Search Clinical Trials' to begin.")
 
+else:
     df = st.session_state.trial_data
 
     if df.empty:
-        st.warning("No studies found.")
+        st.warning("No clinical trials were found.")
 
     else:
-        st.success(f"Retrieved {len(df)} clinical trials.")
+        st.success(
+            f"Retrieved {len(df):,} clinical trials "
+            f"for {st.session_state.searched_condition}."
+        )
 
         st.caption(
-            "Results represent the retrieved sample, "
-            "not necessarily all matching clinical trials."
+            "Results describe the retrieved sample, not "
+            "necessarily all studies matching the search. "
+            "Recruitment status and location data may change."
         )
 
         # ------------------------------------------
-        # INTERACTIVE FILTERS
+        # FILTERS
         # ------------------------------------------
 
-        st.subheader("Filter Clinical Trials")
+        st.subheader("Filter Studies")
 
-        col1, col2, col3 = st.columns(3)
+        col1, col2, col3, col4 = st.columns(4)
 
         with col1:
             selected_status = st.multiselect(
-                "Recruitment Status", options=sorted(df["Status"].dropna().unique())
+                "Recruitment Status",
+                options=sorted(df["Status"].dropna().unique()),
             )
 
         with col2:
-            phase_options = [
-                "Early Phase 1",
-                "Phase 1",
-                "Phase 2",
-                "Phase 3",
-                "Phase 4",
-                "Not Applicable",
-            ]
-
-            selected_phase = st.multiselect("Trial Phase", options=phase_options)
+            selected_phase = st.multiselect(
+                "Trial Phase",
+                options=PHASE_OPTIONS,
+            )
 
         with col3:
             selected_type = st.multiselect(
-                "Study Type", options=sorted(df["Study Type"].dropna().unique())
+                "Study Type",
+                options=sorted(df["Study Type"].dropna().unique()),
             )
 
-        # ------------------------------------------
-        # APPLY FILTERS
-        # ------------------------------------------
+        with col4:
+            available_countries = sorted(get_country_counts(df)["Country"].tolist())
+
+            selected_countries = st.multiselect(
+                "Countries",
+                options=available_countries,
+                placeholder="All countries",
+            )
 
         filtered_df = df.copy()
 
-        # Recruitment status filter
         if selected_status:
             filtered_df = filtered_df[filtered_df["Status"].isin(selected_status)]
 
-        # Trial phase filter
         if selected_phase:
+            filtered_df = filtered_df[
+                filtered_df["Phase"].apply(
+                    lambda value: any(
+                        phase in selected_phase for phase in clean_phase(value)
+                    )
+                )
+            ]
 
-            phase_mapping = {
-                "EARLY_PHASE1": "Early Phase 1",
-                "PHASE1": "Phase 1",
-                "PHASE2": "Phase 2",
-                "PHASE3": "Phase 3",
-                "PHASE4": "Phase 4",
-                "NA": "Not Applicable",
-            }
-
-            def matches_phase(value):
-                phases = str(value).split(",")
-
-                cleaned_phases = [
-                    phase_mapping.get(phase.strip(), phase.strip()) for phase in phases
-                ]
-
-                return any(phase in selected_phase for phase in cleaned_phases)
-
-            filtered_df = filtered_df[filtered_df["Phase"].apply(matches_phase)]
-
-        # Study type filter
         if selected_type:
             filtered_df = filtered_df[filtered_df["Study Type"].isin(selected_type)]
 
-        st.write(
-            f"Showing **{len(filtered_df)}** " f"of **{len(df)}** retrieved studies."
+        if selected_countries:
+            expanded = expand_trial_countries(filtered_df)
+
+            matching_ids = expanded.loc[
+                expanded["Country"].isin(selected_countries),
+                "NCT ID",
+            ].unique()
+
+            filtered_df = filtered_df[filtered_df["NCT ID"].isin(matching_ids)]
+
+        st.caption(
+            f"Showing {len(filtered_df):,} of " f"{len(df):,} retrieved studies."
         )
 
         # ------------------------------------------
-        # SUMMARY METRICS
+        # SHARED ANALYTICS
         # ------------------------------------------
 
-        st.divider()
+        geographic_metrics = get_geographic_metrics(filtered_df)
 
-        col1, col2, col3 = st.columns(3)
+        country_counts = get_country_counts(filtered_df)
 
-        with col1:
-            st.metric("Total Studies", len(filtered_df))
+        recruiting_count = int((filtered_df["Status"] == "RECRUITING").sum())
 
-        with col2:
-            interventional = (filtered_df["Study Type"] == "INTERVENTIONAL").sum()
-
-            st.metric("Interventional Studies", int(interventional))
-
-        with col3:
-            recruiting = (filtered_df["Status"] == "RECRUITING").sum()
-
-            st.metric("Recruiting Studies", int(recruiting))
+        interventional_count = int(
+            (filtered_df["Study Type"] == "INTERVENTIONAL").sum()
+        )
 
         # ------------------------------------------
-        # STUDY TYPE AND RECRUITMENT CHARTS
+        # NAVIGATION
         # ------------------------------------------
 
-        st.divider()
+        overview_tab, geography_tab, explorer_tab = st.tabs(
+            [
+                "📊 Overview",
+                "🌍 Geographic Intelligence",
+                "🔬 Trial Explorer",
+            ]
+        )
 
-        col1, col2 = st.columns(2)
+        # ==========================================
+        # OVERVIEW TAB
+        # ==========================================
 
-        with col1:
-            st.subheader("Study Type Distribution")
+        with overview_tab:
+            st.subheader("Clinical Research Overview")
 
-            if not filtered_df.empty:
-                fig = px.pie(
-                    filtered_df,
-                    names="Study Type",
-                    title="Interventional vs Observational",
-                    hole=0.4,
+            m1, m2, m3, m4 = st.columns(4)
+
+            with m1:
+                st.metric(
+                    "Studies",
+                    f"{len(filtered_df):,}",
                 )
 
-                st.plotly_chart(fig, width="stretch")
-            else:
-                st.info("No studies match these filters.")
+            with m2:
+                st.metric(
+                    "Recruiting",
+                    f"{recruiting_count:,}",
+                )
 
-        with col2:
-            st.subheader("Recruitment Status")
+            with m3:
+                st.metric(
+                    "Interventional",
+                    f"{interventional_count:,}",
+                )
+
+            with m4:
+                st.metric(
+                    "Countries Represented",
+                    geographic_metrics["countries_represented"],
+                )
+
+            st.divider()
+
+            chart1, chart2 = st.columns(2)
+
+            with chart1:
+                st.markdown("#### Study Type Distribution")
+
+                if not filtered_df.empty:
+                    fig = px.pie(
+                        filtered_df,
+                        names="Study Type",
+                        hole=0.55,
+                        color_discrete_sequence=COLOR_SEQUENCE,
+                    )
+
+                    st.plotly_chart(
+                        style_chart(fig),
+                        width="stretch",
+                    )
+                else:
+                    st.info("No matching studies.")
+
+            with chart2:
+                st.markdown("#### Recruitment Status")
+
+                if not filtered_df.empty:
+                    status_counts = filtered_df["Status"].value_counts().reset_index()
+
+                    status_counts.columns = [
+                        "Status",
+                        "Count",
+                    ]
+
+                    fig = px.bar(
+                        status_counts,
+                        x="Status",
+                        y="Count",
+                        color_discrete_sequence=[BLUE],
+                    )
+
+                    fig.update_layout(
+                        xaxis_title="",
+                        yaxis_title="Number of Studies",
+                    )
+
+                    st.plotly_chart(
+                        style_chart(fig),
+                        width="stretch",
+                    )
+                else:
+                    st.info("No matching studies.")
+
+            st.divider()
+
+            st.subheader("Sponsor Intelligence")
 
             if not filtered_df.empty:
-                status_counts = filtered_df["Status"].value_counts().reset_index()
+                sponsor_counts = (
+                    filtered_df["Sponsor"].value_counts().head(10).reset_index()
+                )
 
-                status_counts.columns = ["Status", "Count"]
+                sponsor_counts.columns = [
+                    "Sponsor",
+                    "Number of Trials",
+                ]
 
                 fig = px.bar(
-                    status_counts,
-                    x="Status",
-                    y="Count",
-                    title="Clinical Trial Recruitment Status",
+                    sponsor_counts,
+                    x="Number of Trials",
+                    y="Sponsor",
+                    orientation="h",
+                    color_discrete_sequence=[TEAL],
                 )
 
-                st.plotly_chart(fig, width="stretch")
+                fig.update_layout(
+                    yaxis=dict(categoryorder="total ascending"),
+                    xaxis_title="Number of Studies",
+                    yaxis_title="",
+                )
+
+                st.plotly_chart(
+                    style_chart(fig, height=420),
+                    width="stretch",
+                )
+
+                st.caption(
+                    "Sponsors are ranked within the currently " "filtered sample."
+                )
+
             else:
-                st.info("No studies match these filters.")
+                st.info("No sponsor data for these filters.")
 
-        # ------------------------------------------
-        # SPONSOR INTELLIGENCE
-        # ------------------------------------------
+        # ==========================================
+        # GEOGRAPHIC INTELLIGENCE TAB
+        # ==========================================
 
-        st.divider()
+        with geography_tab:
+            st.subheader("Geographic Trial Intelligence")
 
-        st.subheader("Sponsor Intelligence")
+            st.write("Explore where clinical studies have " "recorded trial locations.")
 
-        st.write(
-            "Explore the organisations sponsoring "
-            "clinical trials in the selected dataset."
-        )
+            g1, g2, g3 = st.columns(3)
 
-        if not filtered_df.empty:
-
-            sponsor_counts = (
-                filtered_df["Sponsor"].value_counts().head(10).reset_index()
-            )
-
-            sponsor_counts.columns = ["Sponsor", "Number of Trials"]
-
-            fig = px.bar(
-                sponsor_counts,
-                x="Number of Trials",
-                y="Sponsor",
-                orientation="h",
-                title="Top 10 Trial Sponsors",
-            )
-
-            fig.update_layout(yaxis={"categoryorder": "total ascending"})
-
-            st.plotly_chart(fig, width="stretch")
-
-        else:
-            st.info("No sponsor data available " "for the selected filters.")
-
-        # ------------------------------------------
-        # CLINICAL TRIAL DATASET
-        # ------------------------------------------
-
-        st.divider()
-
-        st.subheader("Clinical Trial Dataset")
-
-        st.dataframe(
-            filtered_df,
-            width="stretch",
-            hide_index=True,
-            column_config={
-                "Trial Link": st.column_config.LinkColumn(
-                    "ClinicalTrials.gov", display_text="View Study"
+            with g1:
+                st.metric(
+                    "Countries Represented",
+                    geographic_metrics["countries_represented"],
                 )
-            },
-        )
 
-        # ------------------------------------------
-        # DATA QUALITY
-        # ------------------------------------------
+            with g2:
+                st.metric(
+                    "Studies With Locations",
+                    geographic_metrics["trials_with_locations"],
+                )
 
-        st.divider()
+            with g3:
+                st.metric(
+                    "Multinational Studies",
+                    geographic_metrics["multinational_trials"],
+                )
 
-        with st.expander("Data Quality Overview"):
+            st.divider()
+
+            st.markdown("#### Global Trial Distribution")
+
+            if not country_counts.empty:
+                fig = px.choropleth(
+                    country_counts,
+                    locations="Country",
+                    locationmode="country names",
+                    color="Number of Trials",
+                    hover_name="Country",
+                    color_continuous_scale=[
+                        "#DBEAFE",
+                        "#60A5FA",
+                        "#2563EB",
+                        "#1E3A8A",
+                    ],
+                    projection="natural earth",
+                )
+
+                fig.update_geos(
+                    showcoastlines=True,
+                    coastlinecolor="#CBD5E1",
+                    showframe=False,
+                    showland=True,
+                    landcolor="#F3F7FC",
+                    showcountries=True,
+                    countrycolor="#CBD5E1",
+                )
+
+                fig.update_layout(
+                    geo=dict(bgcolor="rgba(0,0,0,0)"),
+                    coloraxis_colorbar=dict(title="Studies"),
+                )
+
+                st.plotly_chart(
+                    style_chart(fig, height=500),
+                    width="stretch",
+                )
+
+                st.caption(
+                    "A multinational study is counted once "
+                    "per country with a recorded location. "
+                    "Country totals therefore must not be "
+                    "summed to calculate unique study totals. "
+                    "The map reflects the retrieved sample."
+                )
+
+                st.divider()
+
+                st.markdown("#### Top 10 Countries")
+
+                top_countries = country_counts.head(10)
+
+                fig = px.bar(
+                    top_countries,
+                    x="Number of Trials",
+                    y="Country",
+                    orientation="h",
+                    color_discrete_sequence=[BLUE],
+                )
+
+                fig.update_layout(
+                    yaxis=dict(categoryorder="total ascending"),
+                    xaxis_title="Number of Studies",
+                    yaxis_title="",
+                )
+
+                st.plotly_chart(
+                    style_chart(fig, height=420),
+                    width="stretch",
+                )
+
+                with st.expander("View country-level data"):
+                    st.dataframe(
+                        country_counts,
+                        width="stretch",
+                        hide_index=True,
+                    )
+
+            else:
+                st.info(
+                    "No geographic location information "
+                    "is available for these studies."
+                )
+
+        # ==========================================
+        # TRIAL EXPLORER TAB
+        # ==========================================
+
+        with explorer_tab:
+            st.subheader("Clinical Trial Explorer")
 
             st.write(
-                "Review missing information within " "the currently filtered dataset."
+                "Browse individual studies, review "
+                "trial information and export results."
             )
 
-            if not filtered_df.empty:
+            title_search = st.text_input(
+                "Search within trial titles or NCT IDs",
+                placeholder="Enter a keyword or NCT ID",
+            )
+
+            explorer_df = filtered_df.copy()
+
+            if title_search.strip():
+                keyword = title_search.strip()
+
+                matching_titles = explorer_df["Title"].str.contains(
+                    keyword,
+                    case=False,
+                    na=False,
+                    regex=False,
+                )
+
+                matching_ids = explorer_df["NCT ID"].str.contains(
+                    keyword,
+                    case=False,
+                    na=False,
+                    regex=False,
+                )
+
+                explorer_df = explorer_df[matching_titles | matching_ids]
+
+            st.caption(f"{len(explorer_df):,} studies displayed.")
+
+            st.dataframe(
+                explorer_df,
+                width="stretch",
+                hide_index=True,
+                column_config={
+                    "Trial Link": (
+                        st.column_config.LinkColumn(
+                            "ClinicalTrials.gov",
+                            display_text="View Study",
+                        )
+                    )
+                },
+            )
+
+            st.divider()
+
+            with st.expander("Data Quality Overview"):
+                st.write(
+                    "Completeness of selected fields " "within the displayed dataset."
+                )
 
                 quality_columns = [
                     "Enrollment",
@@ -290,37 +620,46 @@ if st.session_state.trial_data is not None:
 
                 quality_records = []
 
-                for column in quality_columns:
+                if not explorer_df.empty:
+                    for column in quality_columns:
+                        missing = (
+                            explorer_df[column].isna()
+                            | explorer_df[column].eq("Not available")
+                        ).sum()
 
-                    missing = (
-                        filtered_df[column].isna()
-                        | filtered_df[column].eq("Not available")
-                    ).sum()
+                        completeness = (1 - missing / len(explorer_df)) * 100
 
-                    completeness = (1 - missing / len(filtered_df)) * 100
+                        quality_records.append(
+                            {
+                                "Field": column,
+                                "Missing Records": int(missing),
+                                "Completeness (%)": round(completeness, 1),
+                            }
+                        )
 
-                    quality_records.append(
-                        {
-                            "Field": column,
-                            "Missing Records": int(missing),
-                            "Completeness (%)": round(completeness, 1),
-                        }
+                    st.dataframe(
+                        pd.DataFrame(quality_records),
+                        width="stretch",
+                        hide_index=True,
                     )
+                else:
+                    st.info("No studies to analyse.")
 
-                st.dataframe(quality_records, width="stretch", hide_index=True)
+            csv = explorer_df.to_csv(index=False)
 
-            else:
-                st.info("No studies available for quality analysis.")
+            st.download_button(
+                "📥 Download Filtered Dataset (CSV)",
+                data=csv,
+                file_name="ClinicalUpDatabase_trials.csv",
+                mime="text/csv",
+            )
 
-        # ------------------------------------------
-        # DOWNLOAD DATA
-        # ------------------------------------------
+        st.divider()
 
-        csv = filtered_df.to_csv(index=False)
-
-        st.download_button(
-            label="📥 Download Filtered Dataset (CSV)",
-            data=csv,
-            file_name="ClinicalUpDatabase_trials.csv",
-            mime="text/csv",
+        st.caption(
+            "ClinicalUpDatabase uses publicly available "
+            "ClinicalTrials.gov information. "
+            "Verify study details against the original "
+            "registry records. This tool does not provide "
+            "medical advice."
         )
