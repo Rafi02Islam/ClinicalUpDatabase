@@ -30,6 +30,33 @@ The project demonstrates the application of clinical research knowledge, data pr
 - Requests
 - ClinicalTrials.gov API v2
 
+## AI-Assisted Development
+
+ClinicalUpDatabase was developed using a combination of clinical research knowledge, Python programming, data analytics and AI-assisted development workflows.
+
+Generative AI tools were leveraged to support:
+
+- **Software Development:** Accelerating the implementation of Python functions, API integration and interactive dashboard components.
+- **Debugging and Troubleshooting:** Identifying and resolving issues involving data processing, application logic and filtering.
+- **Code Optimisation:** Improving code structure, readability and maintainability through iterative refinement.
+- **Problem-Solving:** Exploring technical approaches, testing implementations and translating project requirements into working functionality.
+
+AI-assisted suggestions were incorporated into an iterative development process involving local testing, debugging and validation.
+
+The project demonstrates how generative AI can be combined with domain-specific scientific knowledge to accelerate the development of practical research tools.
+
+## Planned AI Integration
+
+Future development will explore integrating large language models (LLMs) directly into ClinicalUpDatabase.
+
+Potential features include:
+
+- **Plain-Language Trial Summaries:** Translating complex clinical trial descriptions into accessible explanations.
+- **AI-Assisted Trial Comparison:** Highlighting differences between clinical study designs, interventions and eligibility criteria.
+- **Clinical Research Insights:** Supporting exploration of trial characteristics and emerging research activity.
+
+These capabilities are planned and are not currently available in the dashboard. AI-generated content would require appropriate validation and clear links to its underlying clinical trial sources.
+
 ## Data Source
 
 ClinicalUpDatabase retrieves publicly available clinical trial information through the ClinicalTrials.gov API.
@@ -76,3 +103,21 @@ Active development. The initial interactive dashboard is functional, with additi
 ## Author
 
 Developed as an independent clinical research and data analytics portfolio project.
+
+## Geographic Trial Intelligence
+
+ClinicalUpDatabase includes interactive geographic analysis of clinical trial activity.
+
+Features include:
+
+- Interactive global map visualising trial locations by country.
+- Country-level filtering across the dashboard.
+- Rankings of countries represented in the retrieved dataset.
+- Identification of multinational clinical studies.
+- Geographic metrics calculated using unique clinical trial identifiers to avoid double-counting studies within individual countries.
+
+Geographic analyses reflect recorded study locations within the retrieved ClinicalTrials.gov sample, rather than the complete global clinical trial landscape.
+
+## Live Application
+
+Explore ClinicalUpDatabase: https://clinicalupdatabase.streamlit.app/
