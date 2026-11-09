@@ -9,6 +9,11 @@ from src.geography import (
     get_country_counts,
     get_geographic_metrics,
 )
+from src.ai_explainer import (
+    explain_study,
+    GeminiQuotaError,
+    GeminiExplanationError,
+)
 
 # --------------------------------------------------
 # PAGE CONFIGURATION
@@ -51,7 +56,6 @@ PHASE_OPTIONS = [
     "Not Applicable",
 ]
 
-
 # --------------------------------------------------
 # VISUAL STYLING
 # --------------------------------------------------
@@ -84,7 +88,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-
 # --------------------------------------------------
 # HELPER FUNCTIONS
 # --------------------------------------------------
@@ -97,20 +100,13 @@ def load_data(condition, max_pages):
         page_size=100,
         max_pages=max_pages,
     )
-
     return create_dataframe(studies)
 
 
 def clean_phase(value):
     phases = str(value).split(",")
 
-    return [
-        PHASE_MAPPING.get(
-            phase.strip(),
-            phase.strip(),
-        )
-        for phase in phases
-    ]
+    return [PHASE_MAPPING.get(phase.strip(), phase.strip()) for phase in phases]
 
 
 def style_chart(fig, height=350):
@@ -122,7 +118,6 @@ def style_chart(fig, height=350):
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
     )
-
     return fig
 
 
@@ -131,7 +126,6 @@ def style_chart(fig, height=350):
 # --------------------------------------------------
 
 st.title("🧬 ClinicalUpDatabase")
-
 st.markdown("**Clinical Trial Intelligence Platform**")
 
 st.caption(
@@ -141,7 +135,6 @@ st.caption(
 )
 
 st.divider()
-
 
 # --------------------------------------------------
 # SEARCH
@@ -170,13 +163,9 @@ if "trial_data" not in st.session_state:
 if "searched_condition" not in st.session_state:
     st.session_state.searched_condition = None
 
-if st.button(
-    "🔎 Search Clinical Trials",
-    type="primary",
-):
+if st.button("🔎 Search Clinical Trials", type="primary"):
     if not condition.strip():
         st.warning("Please enter a therapeutic area.")
-
     else:
         try:
             with st.spinner("Retrieving clinical trial data..."):
@@ -184,7 +173,6 @@ if st.button(
                     condition.strip(),
                     max_pages // 100,
                 )
-
                 st.session_state.trial_data = df_result
                 st.session_state.searched_condition = condition.strip()
 
@@ -289,7 +277,6 @@ else:
         # ------------------------------------------
 
         geographic_metrics = get_geographic_metrics(filtered_df)
-
         country_counts = get_country_counts(filtered_df)
 
         recruiting_count = int((filtered_df["Status"] == "RECRUITING").sum())
@@ -302,11 +289,12 @@ else:
         # NAVIGATION
         # ------------------------------------------
 
-        overview_tab, geography_tab, explorer_tab = st.tabs(
+        overview_tab, geography_tab, explorer_tab, ai_tab = st.tabs(
             [
                 "📊 Overview",
                 "🌍 Geographic Intelligence",
                 "🔬 Trial Explorer",
+                "✨ AI Trial Intelligence",
             ]
         )
 
@@ -320,16 +308,10 @@ else:
             m1, m2, m3, m4 = st.columns(4)
 
             with m1:
-                st.metric(
-                    "Studies",
-                    f"{len(filtered_df):,}",
-                )
+                st.metric("Studies", f"{len(filtered_df):,}")
 
             with m2:
-                st.metric(
-                    "Recruiting",
-                    f"{recruiting_count:,}",
-                )
+                st.metric("Recruiting", f"{recruiting_count:,}")
 
             with m3:
                 st.metric(
@@ -429,9 +411,8 @@ else:
                 )
 
                 st.caption(
-                    "Sponsors are ranked within the currently " "filtered sample."
+                    "Sponsors are ranked within the " "currently filtered sample."
                 )
-
             else:
                 st.info("No sponsor data for these filters.")
 
@@ -595,11 +576,9 @@ else:
                 width="stretch",
                 hide_index=True,
                 column_config={
-                    "Trial Link": (
-                        st.column_config.LinkColumn(
-                            "ClinicalTrials.gov",
-                            display_text="View Study",
-                        )
+                    "Trial Link": st.column_config.LinkColumn(
+                        "ClinicalTrials.gov",
+                        display_text="View Study",
                     )
                 },
             )
@@ -653,6 +632,95 @@ else:
                 file_name="ClinicalUpDatabase_trials.csv",
                 mime="text/csv",
             )
+
+        # ==========================================
+        # AI TRIAL INTELLIGENCE TAB
+        # ==========================================
+
+        with ai_tab:
+            st.subheader("AI Trial Explainer")
+
+            st.write(
+                "Choose a clinical trial and generate a "
+                "plain-English explanation based on its "
+                "official ClinicalTrials.gov record."
+            )
+
+            st.caption(
+                "AI explanations are generated only when requested. "
+                "Responses are cached to reduce free-tier usage."
+            )
+
+            if filtered_df.empty:
+                st.info("No studies match the current filters.")
+
+            else:
+                study_choices = (
+                    filtered_df[["NCT ID", "Title"]]
+                    .dropna(subset=["NCT ID"])
+                    .drop_duplicates(subset=["NCT ID"])
+                )
+
+                study_ids = study_choices["NCT ID"].tolist()
+
+                study_titles = dict(
+                    zip(
+                        study_choices["NCT ID"],
+                        study_choices["Title"],
+                    )
+                )
+
+                chosen_nct = st.selectbox(
+                    "Select a clinical trial",
+                    options=study_ids,
+                    format_func=lambda nct: (
+                        f"{nct} — " f"{str(study_titles.get(nct, ''))[:105]}"
+                    ),
+                )
+
+                st.link_button(
+                    "View official study record",
+                    f"https://clinicaltrials.gov/study/{chosen_nct}",
+                )
+
+                if st.button(
+                    "✨ Generate AI Explanation",
+                    type="primary",
+                ):
+                    try:
+                        with st.spinner("Retrieving and explaining the study..."):
+                            explanation = explain_study(chosen_nct)
+
+                        st.session_state["ai_last_explanation"] = (
+                            chosen_nct,
+                            explanation,
+                        )
+
+                    except GeminiQuotaError:
+                        st.warning(
+                            "The free Gemini API quota is currently "
+                            "unavailable. Please try again later. "
+                            "No paid API fallback is used."
+                        )
+
+                    except GeminiExplanationError as error:
+                        st.error(str(error))
+
+                previous = st.session_state.get("ai_last_explanation")
+
+                if previous and previous[0] == chosen_nct:
+                    st.divider()
+                    st.markdown(previous[1])
+
+                    st.caption(
+                        "AI-generated explanation. May contain "
+                        "errors or omissions. Verify against "
+                        "the official record. Not medical advice."
+                    )
+
+        # ------------------------------------------
+        # FOOTER
+        # ------------------------------------------
 
         st.divider()
 
