@@ -10,6 +10,22 @@ The project combines clinical development knowledge with data engineering, analy
 
 ---
 
+## Application Preview
+
+### Clinical Research Overview
+
+![ClinicalUpDatabase Overview](screenshots/overview.png)
+
+### Geographic Intelligence
+
+![ClinicalUpDatabase Geographic Intelligence](screenshots/geography.png)
+
+### AI Trial Intelligence
+
+![ClinicalUpDatabase AI Trial Intelligence](screenshots/ai-trial-intelligence.png)
+
+---
+
 ## Overview
 
 ClinicalTrials.gov contains extensive information about registered clinical studies, but navigating individual records and identifying research patterns can be challenging.
