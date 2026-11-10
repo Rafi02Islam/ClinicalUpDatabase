@@ -1,6 +1,12 @@
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import hashlib
+
+from src.overview_ai import (
+    generate_research_overview,
+    OverviewAIError,
+)
 
 from src.api import fetch_studies
 from src.processing import create_dataframe
@@ -324,6 +330,78 @@ else:
                     "Countries Represented",
                     geographic_metrics["countries_represented"],
                 )
+
+    # ------------------------------------------
+    # AI RESEARCH OVERVIEW
+    # ------------------------------------------
+
+    st.divider()
+    st.subheader("✨ AI Research Overview")
+
+    st.caption(
+        "Understand the condition, treatments being investigated "
+        "and key research themes in simple English."
+    )
+
+    if filtered_df.empty:
+        st.info("No studies are available to summarise.")
+
+    else:
+        current_condition = st.session_state.get("searched_condition", "")
+
+        # Identify the exact dataset, including active filters.
+        snapshot_data = filtered_df[
+            [
+                column
+                for column in [
+                    "NCT ID",
+                    "Title",
+                    "Intervention",
+                    "Intervention Type",
+                    "Status",
+                    "Phase",
+                    "Study Type",
+                ]
+                if column in filtered_df.columns
+            ]
+        ].sort_values("NCT ID")
+
+        fingerprint = hashlib.sha256(
+            (current_condition + snapshot_data.to_json(orient="records")).encode(
+                "utf-8"
+            )
+        ).hexdigest()
+
+        if st.button(
+            "✨ Generate AI Overview",
+            key="generate_research_overview",
+            type="primary",
+        ):
+            try:
+                with st.spinner("Analysing research activity..."):
+                    overview_text = generate_research_overview(
+                        filtered_df,
+                        current_condition,
+                    )
+
+                st.session_state["research_overview_result"] = {
+                    "fingerprint": fingerprint,
+                    "text": overview_text,
+                }
+
+            except OverviewAIError as error:
+                st.error(str(error))
+
+        previous_overview = st.session_state.get("research_overview_result")
+
+        if previous_overview and previous_overview["fingerprint"] == fingerprint:
+            st.markdown(previous_overview["text"])
+
+            st.caption(
+                "AI-generated summary of retrieved clinical trials. "
+                "Research activity does not establish treatment "
+                "effectiveness. Not medical advice."
+            )
 
             st.divider()
 
